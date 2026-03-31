@@ -16,8 +16,18 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold
 # ========================
 # Setup
 # ========================
-nltk.download("stopwords")
-nltk.download("wordnet")
+def ensure_nltk_resources():
+    resources = {
+        "corpora/stopwords": "stopwords",
+        "corpora/wordnet": "wordnet",
+    }
+    for resource_path, resource_name in resources.items():
+        try:
+            nltk.data.find(resource_path)
+        except LookupError:
+            nltk.download(resource_name, quiet=True)
+
+ensure_nltk_resources()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -46,12 +56,10 @@ def preprocess(text):
     text = text.lower()
 
     # 👉 xử lý negation (rất quan trọng)
-    text = re.sub(r"not\s+good", "not_good", text)
-    text = re.sub(r"not\s+bad", "not_bad", text)
-    text = re.sub(r"not\s+working", "not_working", text)
+    text = re.sub(r"\b(not|no|never)\s+([a-z]+)\b", r"\1_\2", text)
 
     # remove ký tự đặc biệt
-    text = re.sub(r"[^a-z\s]", " ", text)
+    text = re.sub(r"[^a-z_\s]", " ", text)
 
     tokens = text.split()
 
@@ -103,7 +111,7 @@ param_grid = {
 gs = GridSearchCV(
     pipeline,
     param_grid,
-    cv=StratifiedKFold(n_splits=3),
+    cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=42),
     scoring="f1_macro",
     n_jobs=-1,
     verbose=1
