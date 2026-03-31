@@ -1,22 +1,33 @@
 import pandas as pd
 from pathlib import Path
-import nltk
-nltk.download("stopwords")
-nltk.download("wordnet")
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
 import re
+import nltk
 import joblib
 
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.svm import LinearSVC
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+
+# ========================
+# Setup
+# ========================
+nltk.download("stopwords")
+nltk.download("wordnet")
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-STOP_WORDS = set(stopwords.words("english"))
+
+# 👉 GIỮ lại từ phủ định
+STOP_WORDS = set(stopwords.words("english")) - {"not", "no", "nor", "never"}
 LEMMATIZER = WordNetLemmatizer()
 
-
+# ========================
+# Labeling
+# ========================
 def make_label(rating):
     if rating >= 7:
         return "Positive"
@@ -25,76 +36,103 @@ def make_label(rating):
     else:
         return "Negative"
 
-
+# ========================
+# Preprocess (IMPROVED)
+# ========================
 def preprocess(text):
     if pd.isna(text):
         return ""
-    text = re.sub(r"[^a-z\s]", " ", text.lower())
+
+    text = text.lower()
+
+    # 👉 xử lý negation (rất quan trọng)
+    text = re.sub(r"not\s+good", "not_good", text)
+    text = re.sub(r"not\s+bad", "not_bad", text)
+    text = re.sub(r"not\s+working", "not_working", text)
+
+    # remove ký tự đặc biệt
+    text = re.sub(r"[^a-z\s]", " ", text)
+
     tokens = text.split()
-    tokens = [LEMMATIZER.lemmatize(t) for t in tokens
-              if t not in STOP_WORDS and len(t) > 1]
+
+    tokens = [
+        LEMMATIZER.lemmatize(t)
+        for t in tokens
+        if t not in STOP_WORDS and len(t) > 1
+    ]
+
     return " ".join(tokens)
 
+# ========================
+# Load data
+# ========================
+df_train = pd.read_csv(BASE_DIR / "data/cleaned/drugsComTrain_cleaned.csv")
+df_test  = pd.read_csv(BASE_DIR / "data/cleaned/drugsComTest_cleaned.csv")
 
-vectorizer = TfidfVectorizer(
-    max_features=50000,
-    ngram_range=(1, 2),
-    sublinear_tf=True,
-    min_df=3,
-)
-
-df_train = pd.read_csv(Path(BASE_DIR) / "./data/cleaned/drugsComTrain_cleaned.csv")
 df_train["sentiment"] = df_train["rating"].map(make_label)
-df_train["review_clean"] = df_train["review"].map(preprocess)
+df_test["sentiment"]  = df_test["rating"].map(make_label)
 
-df_test = pd.read_csv(Path(BASE_DIR) / "./data/cleaned/drugsComTest_cleaned.csv")
-df_test["sentiment"] = df_test["rating"].map(make_label)
-df_test["review_clean"] = df_test["review"].map(preprocess)
+df_train["review_clean"] = df_train["review"].map(preprocess)
+df_test["review_clean"]  = df_test["review"].map(preprocess)
 
 X_train = df_train["review_clean"]
 Y_train = df_train["sentiment"]
 X_test  = df_test["review_clean"]
 Y_test  = df_test["sentiment"]
 
-X_train_vec = vectorizer.fit_transform(X_train)
-X_test_vec  = vectorizer.transform(X_test)
+# ========================
+# Pipeline (BEST PRACTICE)
+# ========================
+pipeline = Pipeline([
+    ("tfidf", TfidfVectorizer(
+        max_features=60000,
+        ngram_range=(1, 3),   # 🔥 upgrade từ (1,2)
+        sublinear_tf=True,
+        min_df=5
+    )),
+    ("clf", LinearSVC(class_weight="balanced", dual="auto"))
+])
 
+# ========================
+# Hyperparameter tuning
+# ========================
 param_grid = {
-    "C": [0.1, 1.0, 10.0],
-    "solver": ["saga"],
-    "penalty": ["l1", "l2"],  # fix: tách thành 2 string riêng biệt
+    "clf__C": [0.5, 1.0, 2.0]
 }
 
-base_clf = LogisticRegression(
-    multi_class="multinomial",
-    max_iter=3000,
-    n_jobs=-1,
-    class_weight="balanced",
-)
-
 gs = GridSearchCV(
-    base_clf,
+    pipeline,
     param_grid,
     cv=StratifiedKFold(n_splits=3),
-    scoring="f1_macro",  # fix: macro không phải marco
+    scoring="f1_macro",
     n_jobs=-1,
-    verbose=1,
+    verbose=1
 )
 
-gs.fit(X_train_vec, Y_train)
+# ========================
+# Train
+# ========================
+gs.fit(X_train, Y_train)
+
 print("Best params:", gs.best_params_)
 print("Best CV macro F1:", gs.best_score_)
 
-clf = gs.best_estimator_  # đã được fit sẵn, không cần fit lại
+# ========================
+# Evaluate
+# ========================
+best_model = gs.best_estimator_
 
-Y_pred = clf.predict(X_test_vec)
+Y_pred = best_model.predict(X_test)
 
 print(f"Accuracy: {accuracy_score(Y_test, Y_pred):.4f}")
 print(classification_report(Y_test, Y_pred))
 
-model_dir = Path(BASE_DIR) / "models"
+# ========================
+# Save model
+# ========================
+model_dir = BASE_DIR / "models"
 model_dir.mkdir(parents=True, exist_ok=True)
 
-joblib.dump(vectorizer, model_dir / "tfidf_vectorizer.pkl")
-joblib.dump(clf, model_dir / "lr_sentiment_model.pkl")
-print("Done")
+joblib.dump(best_model, model_dir / "sentiment_pipeline.pkl")
+
+print("✅ Model saved!")
