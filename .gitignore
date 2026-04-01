@@ -18,6 +18,8 @@ data/raw/*
 data/cleaned/*
 !data/raw/.gitkeep
 !data/cleaned/.gitkeep
+data/reviews_to_predict.txt
+data/reviews_predicted.csv
 
 # Models
 models/*.pkl
