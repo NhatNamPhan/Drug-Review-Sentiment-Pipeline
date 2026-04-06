@@ -1,75 +1,27 @@
+import joblib
 import pandas as pd
 from pathlib import Path
-import re
-import nltk
-import joblib
-
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
-
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import LinearSVC
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.svm import LinearSVC
 
-# ========================
-# Setup
-# ========================
-def ensure_nltk_resources():
-    resources = {
-        "corpora/stopwords": "stopwords",
-        "corpora/wordnet": "wordnet",
-    }
-    for resource_path, resource_name in resources.items():
-        try:
-            nltk.data.find(resource_path)
-        except LookupError:
-            nltk.download(resource_name, quiet=True)
-
-ensure_nltk_resources()
+from text_utils import preprocess
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
-# 👉 GIỮ lại từ phủ định
-STOP_WORDS = set(stopwords.words("english")) - {"not", "no", "nor", "never"}
-LEMMATIZER = WordNetLemmatizer()
 
 # ========================
 # Labeling
 # ========================
 def make_label(rating):
+    """Convert a numeric drug rating (1-10) into a sentiment label."""
     if rating >= 7:
         return "Positive"
     elif 4 <= rating <= 6:
         return "Neutral"
     else:
         return "Negative"
-
-# ========================
-# Preprocess (IMPROVED)
-# ========================
-def preprocess(text):
-    if pd.isna(text):
-        return ""
-
-    text = text.lower()
-
-    # 👉 xử lý negation (rất quan trọng)
-    text = re.sub(r"\b(not|no|never)\s+([a-z]+)\b", r"\1_\2", text)
-
-    # remove ký tự đặc biệt
-    text = re.sub(r"[^a-z_\s]", " ", text)
-
-    tokens = text.split()
-
-    tokens = [
-        LEMMATIZER.lemmatize(t)
-        for t in tokens
-        if t not in STOP_WORDS and len(t) > 1
-    ]
-
-    return " ".join(tokens)
 
 # ========================
 # Load data
@@ -89,16 +41,16 @@ X_test  = df_test["review_clean"]
 Y_test  = df_test["sentiment"]
 
 # ========================
-# Pipeline (BEST PRACTICE)
+# Pipeline
 # ========================
 pipeline = Pipeline([
     ("tfidf", TfidfVectorizer(
         max_features=60000,
-        ngram_range=(1, 3),   # 🔥 upgrade từ (1,2)
-        sublinear_tf=True,
-        min_df=5
+        ngram_range=(1, 3),   # include unigrams, bigrams, and trigrams
+        sublinear_tf=True,    # apply log normalization to term frequencies
+        min_df=5              # ignore terms that appear in fewer than 5 documents
     )),
-    ("clf", LinearSVC(class_weight="balanced", dual="auto"))
+    ("clf", LinearSVC(class_weight="balanced", dual="auto"))  # handle class imbalance automatically
 ])
 
 # ========================

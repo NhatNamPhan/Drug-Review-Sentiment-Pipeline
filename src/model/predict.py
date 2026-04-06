@@ -1,47 +1,16 @@
 import argparse
-import re
 from pathlib import Path
 
 import joblib
-import nltk
 import numpy as np
 import pandas as pd
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
+
+from text_utils import preprocess
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_PATH = BASE_DIR / "models" / "sentiment_pipeline.pkl"
 DEFAULT_INPUT_PATH = BASE_DIR / "data" / "reviews_to_predict.txt"
 DEFAULT_OUTPUT_PATH = BASE_DIR / "data" / "reviews_predicted.csv"
-
-
-def ensure_nltk_resources():
-    resources = {
-        "corpora/stopwords": "stopwords",
-        "corpora/wordnet": "wordnet",
-    }
-    for resource_path, resource_name in resources.items():
-        try:
-            nltk.data.find(resource_path)
-        except LookupError:
-            nltk.download(resource_name, quiet=True)
-
-
-ensure_nltk_resources()
-STOP_WORDS = set(stopwords.words("english")) - {"not", "no", "nor", "never"}
-LEMMATIZER = WordNetLemmatizer()
-
-
-def preprocess(text):
-    if pd.isna(text):
-        return ""
-    text = text.lower()
-    text = re.sub(r"\b(not|no|never)\s+([a-z]+)\b", r"\1_\2", text)
-    text = re.sub(r"[^a-z_\s]", " ", text)
-    tokens = text.split()
-    tokens = [LEMMATIZER.lemmatize(t) for t in tokens if t not in STOP_WORDS and len(t) > 1]
-    return " ".join(tokens)
-
 
 def softmax(scores):
     shifted = scores - np.max(scores, axis=1, keepdims=True)
