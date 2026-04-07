@@ -53,9 +53,7 @@ def preprocess(text):
 
     tokens = text.split()
     tokens = [
-        LEMMATIZER.lemmatize(t)
-        for t in tokens
-        if t not in STOP_WORDS and len(t) > 1
+        LEMMATIZER.lemmatize(t) for t in tokens if t not in STOP_WORDS and len(t) > 1
     ]
 
     return " ".join(tokens)
