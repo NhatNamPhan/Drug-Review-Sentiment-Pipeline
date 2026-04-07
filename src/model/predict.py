@@ -4,13 +4,13 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-
 from text_utils import preprocess
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_PATH = BASE_DIR / "models" / "sentiment_pipeline.pkl"
 DEFAULT_INPUT_PATH = BASE_DIR / "data" / "reviews_to_predict.txt"
 DEFAULT_OUTPUT_PATH = BASE_DIR / "data" / "reviews_predicted.csv"
+
 
 def softmax(scores):
     shifted = scores - np.max(scores, axis=1, keepdims=True)

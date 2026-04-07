@@ -1,7 +1,8 @@
 import os
+
+import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-import pandas as pd
 
 load_dotenv()
 
@@ -15,9 +16,11 @@ DATABASE_URL = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
 
 engine = create_engine(DATABASE_URL)
 
+
 def create_table():
     with engine.connect() as conn:
-        conn.execute(text("""
+        conn.execute(
+            text("""
             CREATE TABLE IF NOT EXISTS predictions (
             id SERIAL PRIMARY KEY,
             review TEXT,
@@ -27,17 +30,12 @@ def create_table():
             prob_negative FLOAT,
             predicted_at TIMESTAMP DEFAULT NOW()
         );
-        """))
+        """)
+        )
         conn.commit()
     print("Table 'predictions' is ready.")
 
+
 def insert_predictions(df):
-    df.to_sql(
-        name="predictions",
-        con=engine,
-        if_exists="append",
-        index=False
-    )
+    df.to_sql(name="predictions", con=engine, if_exists="append", index=False)
     print(f"Inserted {len(df)} rows into 'predictions'.")
-        
-    
