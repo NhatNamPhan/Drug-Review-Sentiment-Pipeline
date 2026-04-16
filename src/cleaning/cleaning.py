@@ -30,13 +30,13 @@ def clean_df(input_path, output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
 
+if __name__ == "__main__":
+    clean_df(
+        BASE_DIR / "/data/raw/drugsComTrain_raw.csv",
+        BASE_DIR / "/data/cleaned/drugsComTrain_cleaned.csv",
+    )
 
-clean_df(
-    Path(BASE_DIR) / "./data/raw/drugsComTrain_raw.csv",
-    Path(BASE_DIR) / "./data/cleaned/drugsComTrain_cleaned.csv",
-)
-
-clean_df(
-    Path(BASE_DIR) / "./data/raw/drugsComTest_raw.csv",
-    Path(BASE_DIR) / "./data/cleaned/drugsComTest_cleaned.csv",
-)
+    clean_df(
+        BASE_DIR / "/data/raw/drugsComTest_raw.csv",
+        BASE_DIR / "/data/cleaned/drugsComTest_cleaned.csv",
+    )

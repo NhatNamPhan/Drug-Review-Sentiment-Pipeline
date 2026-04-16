@@ -1,5 +1,3 @@
-version: '3.8'
-
 x-airflow-common: &airflow-common
   image: drug-review-airflow:latest
   build:
@@ -8,13 +6,15 @@ x-airflow-common: &airflow-common
   env_file:
     - .env
   environment:
-    AIRFLOW__CORE__EXECUTOR: SequentialExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow-db/airflow.db
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-supersecretkey}
     PYTHONPATH: /opt/airflow
+    NLTK_DATA: /opt/airflow/nltk_data
   volumes:
-    - airflow-db:/opt/airflow/airflow-db
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
@@ -23,46 +23,64 @@ x-airflow-common: &airflow-common
     - ./models:/opt/airflow/models
     - ./.env:/opt/airflow/.env
   extra_hosts:
-    # Cho phép container kết nối tới PostgreSQL local của host
     - "host.docker.internal:host-gateway"
   user: "${AIRFLOW_UID:-50000}:0"
   restart: unless-stopped
 
 services:
-  # ── Khởi tạo DB + tạo admin user (chỉ chạy 1 lần) ────────────
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        airflow db init
+        echo ">>> Waiting for PostgreSQL to be ready..."
+        until airflow db check; do
+          echo "DB not ready, retrying in 5s..."
+          sleep 5
+        done
+
+        echo ">>> Initializing Airflow database..."
+        airflow db migrate 2>/dev/null || airflow db upgrade 2>/dev/null || airflow db init
+
+        echo ">>> Creating admin user..."
         airflow users create \
-          --username admin \
+          --username "${AIRFLOW_ADMIN_USER:-admin}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" \
           --firstname Admin \
           --lastname User \
           --role Admin \
-          --email admin@example.com \
-          --password admin
+          --email "${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" || true
+
+        echo ">>> Initialization complete!"
     restart: "no"
 
-  # ── Web UI: http://localhost:8080 ─────────────────────────────
+  # ── Web UI: http://localhost:8081 ─────────────────────────────
   airflow-webserver:
     <<: *airflow-common
     command: webserver
     ports:
-      - "8080:8080"
+      - "8081:8080"
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     depends_on:
       airflow-init:
         condition: service_completed_successfully
 
-  # ── Scheduler: lên lịch và chạy DAGs ─────────────────────────
+  # ── Scheduler ─────────────────────────────────────────────────
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+    healthcheck:
+      test: [ "CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"' ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-
-volumes:
-  airflow-db:
